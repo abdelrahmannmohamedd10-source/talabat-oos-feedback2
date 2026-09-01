@@ -45,7 +45,7 @@ export default function SelfieScreen({ user, employee, branch, location, onSucce
   async function confirm() {
     setPhase('submitting')
     try {
-      const result = await submitAttendance({ employee, branch, location, accessToken: user.accessToken })
+      const result = await submitAttendance({ employee, branch, location })
       if (result.error) { setErrorMsg(result.error); setPhase('error'); return }
       onSuccess(result)
     } catch (e) {

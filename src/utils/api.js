@@ -1,48 +1,46 @@
 import { CONFIG } from '../config'
-import { getValues, appendRow } from './sheetsApi'
+import { loadMapping } from './gviz'
 
-function colIdx(headers, ...names) {
-  for (const n of names) {
-    const i = headers.findIndex(h => String(h).toLowerCase().trim() === n.toLowerCase())
-    if (i !== -1) return i
+function findCol(obj, ...names) {
+  const norm = s => String(s).toLowerCase().replace(/\s+/g, ' ').trim()
+  const keys = Object.keys(obj)
+  for (const name of names) {
+    const n = norm(name)
+    const exact   = keys.find(k => norm(k) === n)
+    const partial = keys.find(k => norm(k).includes(n))
+    if (exact || partial) return exact || partial
   }
-  return -1
+  return null
 }
 
-export async function verifyEmployee(email, accessToken) {
-  const data = await getValues(CONFIG.SPREADSHEET_ID, 'MAPPING', accessToken)
-  const rows = data.values || []
-  if (!rows.length) return { error: 'شيت MAPPING فاضي' }
+function empVal(emp, ...names) {
+  const k = findCol(emp, ...names)
+  return k ? String(emp[k] || '').trim() : ''
+}
 
-  const headers = rows[0]
-  const eIdx = colIdx(headers, 'email')
-  if (eIdx === -1) return { error: 'عمود Email مش موجود في شيت MAPPING' }
+export async function verifyEmployee(email, ibsNumber) {
+  const { rows } = await loadMapping(CONFIG.SPREADSHEET_ID)
+  const emailNorm = email.toLowerCase().trim()
+  const ibsNorm   = String(ibsNumber).trim()
 
-  for (let i = 1; i < rows.length; i++) {
-    if ((rows[i][eIdx] || '').toLowerCase() === email.toLowerCase()) {
-      const emp = {}
-      headers.forEach((h, idx) => { emp[h] = rows[i][idx] || '' })
-      return { success: true, employee: emp }
+  for (const row of rows) {
+    const rowEmail = empVal(row, 'email').toLowerCase()
+    const rowIbs   = empVal(row, 'ibs number', 'ibs')
+    if (rowEmail === emailNorm && rowIbs === ibsNorm) {
+      return { success: true, employee: row }
     }
   }
-  return { error: 'إيميلك مش موجود في شيت MAPPING — تواصل مع الـ Admin' }
+  return { error: 'الإيميل أو رقم IBS غير صحيح — تواصل مع الـ Admin' }
 }
 
-export async function getBranches(email, accessToken) {
-  const data = await getValues(CONFIG.SPREADSHEET_ID, 'MAPPING', accessToken)
-  const rows = data.values || []
-  if (!rows.length) return { error: 'شيت MAPPING فاضي' }
-
-  const headers = rows[0]
-  const eIdx     = colIdx(headers, 'email')
-  const nameIdx  = colIdx(headers, 'vendor attributes vendor name (english)', 'vendor name')
-  const locIdx   = colIdx(headers, 'vendor attributes vendor map location', 'vendor map location')
-
+export async function getBranches(ibsNumber) {
+  const { rows } = await loadMapping(CONFIG.SPREADSHEET_ID)
+  const ibs = String(ibsNumber).trim()
   const branches = [], seen = new Set()
 
-  for (let i = 1; i < rows.length; i++) {
-    if ((rows[i][eIdx] || '').toLowerCase() !== email.toLowerCase()) continue
-    const locStr = String(rows[i][locIdx] || '').trim()
+  for (const row of rows) {
+    if (empVal(row, 'ibs number', 'ibs') !== ibs) continue
+    const locStr = empVal(row, 'vendor map location', 'vendor attributes vendor map location')
     const parts  = locStr.split(',')
     if (parts.length < 2) continue
     const lat = parseFloat(parts[0])
@@ -52,53 +50,45 @@ export async function getBranches(email, accessToken) {
     if (seen.has(key)) continue
     seen.add(key)
     branches.push({
-      name:      String(rows[i][nameIdx] || 'Vendor'),
+      name:      empVal(row, 'vendor name', 'vendor name/english', 'vendor attributes vendor name') || 'Vendor',
       lat, lng,
       radius:    CONFIG.DEFAULT_RADIUS,
-      chainName: String(rows[i][1] || ''),
+      chainName: empVal(row, 'chain name'),
     })
   }
 
   return branches.length
     ? { success: true, branches }
-    : { error: 'مفيش مواقع فندور مرتبطة بإيميلك' }
+    : { error: 'مفيش مواقع فندور مرتبطة بـ IBS Number بتاعك' }
 }
 
-export async function submitAttendance({ employee, branch, location, accessToken }) {
+export async function submitAttendance({ employee, branch, location }) {
   const now  = new Date()
   const date = now.toLocaleDateString('en-CA')
   const time = now.toLocaleTimeString('en-GB')
 
-  // منع التسجيل المكرر
-  try {
-    const existing = await getValues(CONFIG.SPREADSHEET_ID, 'ATTENDANCE', accessToken)
-    const rows = existing.values || []
-    if (rows.length > 1) {
-      const h = rows[0]
-      const dIdx = h.indexOf('DATE'), eIdx = h.indexOf('EMAIL')
-      for (let i = 1; i < rows.length; i++) {
-        if (rows[i][dIdx] === date && (rows[i][eIdx] || '').toLowerCase() === (employee['Email'] || '').toLowerCase()) {
-          return { error: 'سجّلت حضورك اليوم مسبقاً ✓' }
-        }
-      }
-    }
-  } catch { /* شيت ATTENDANCE مش موجود بعد — عادي */ }
+  const params = new URLSearchParams({
+    action: 'submit',
+    date,
+    time,
+    name:   empVal(employee, 't-champ name', 'tchamp', 'champ'),
+    ibs:    empVal(employee, 'ibs number', 'ibs'),
+    email:  empVal(employee, 'email'),
+    chain:  branch.chainName || '',
+    branch: branch.name,
+    lat:    location.latitude,
+    lng:    location.longitude,
+    acc:    Math.round(location.accuracy),
+  })
 
-  await appendRow(CONFIG.SPREADSHEET_ID, 'ATTENDANCE', [
-    date, time,
-    employee['T-champ']    || '',
-    employee['Ibs Number'] || '',
-    employee['Email']      || '',
-    branch.chainName       || '',
-    branch.name,
-    location.latitude,
-    location.longitude,
-    location.accuracy,
-  ], accessToken)
+  const res = await fetch(`${CONFIG.APPS_SCRIPT_URL}?${params}`)
+  if (!res.ok) throw new Error(`خطأ في السيرفر: ${res.status}`)
+  const json = await res.json()
+  if (json.error) throw new Error(json.error)
 
   return {
     success:  true,
-    employee: employee['T-champ'],
+    employee: params.get('name'),
     branch:   branch.name,
     time:     now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' }),
     date,

@@ -23,7 +23,7 @@ export default function LocationScreen({ user, onSuccess, onLogout }) {
 
   async function load() {
     try {
-      const result = await getBranches(user.email, user.accessToken)
+      const result = await getBranches(user.ibsNumber)
       if (result.error || !result.branches?.length) {
         setStatus(STATUS.ERROR)
         setMessage(result.error || 'مفيش فروع')

@@ -19,8 +19,6 @@ export default function App() {
     setScreen(SCREEN.LOGIN)
     setUser(null); setEmployee(null)
     setLocation(null); setBranch(null); setResult(null)
-    // Clear GIS session so user can re-login
-    try { window.google?.accounts?.id?.disableAutoSelect() } catch {}
   }
 
   return (
