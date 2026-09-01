@@ -18,19 +18,16 @@ function empVal(emp, ...names) {
   return k ? String(emp[k] || '').trim() : ''
 }
 
-export async function verifyEmployee(email, ibsNumber) {
+export async function verifyEmployee(ibsNumber) {
   const { rows } = await loadMapping(CONFIG.SPREADSHEET_ID)
-  const emailNorm = email.toLowerCase().trim()
-  const ibsNorm   = String(ibsNumber).trim()
+  const ibs = String(ibsNumber).trim()
 
   for (const row of rows) {
-    const rowEmail = empVal(row, 'email').toLowerCase()
-    const rowIbs   = empVal(row, 'ibs number', 'ibs')
-    if (rowEmail === emailNorm && rowIbs === ibsNorm) {
+    if (empVal(row, 'ibs number', 'ibs') === ibs) {
       return { success: true, employee: row }
     }
   }
-  return { error: 'الإيميل أو رقم IBS غير صحيح — تواصل مع الـ Admin' }
+  return { error: 'رقم IBS غير موجود — تواصل مع الـ Admin' }
 }
 
 export async function getBranches(ibsNumber) {
