@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  base: '/-Attendance-Operation-Team-/',
+  base: '/talabat-oos-feedback2/',
   plugins: [
     react(),
     VitePWA({
@@ -17,8 +17,8 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/-Attendance-Operation-Team-/',
-        start_url: '/-Attendance-Operation-Team-/',
+        scope: '/talabat-oos-feedback2/',
+        start_url: '/talabat-oos-feedback2/',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
